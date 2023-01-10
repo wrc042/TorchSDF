@@ -10,6 +10,7 @@ _*/
 # generated folders
 torchsdf/version.py
 build/
+tests/outputs
 torchsdf.egg-info
 *.so
 *.egg

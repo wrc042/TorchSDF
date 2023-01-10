@@ -1,6 +1,7 @@
 import torch
 from torchsdf import _C
 
+
 def index_vertices_by_faces(vertices_features, faces):
     r"""Index vertex features to convert per vertex tensor to per vertex per face tensor.
 
@@ -17,12 +18,21 @@ def index_vertices_by_faces(vertices_features, faces):
             the face features, of shape
             :math:`(\text{batch_size}, \text{num_faces}, \text{num_vertices}, \text{knum})`.
     """
-    assert vertices_features.ndim == 3, \
-        "vertices_features must have 3 dimensions of shape (batch_size, num_points, knum)"
+    assert vertices_features.ndim == 2, \
+        "vertices_features must have 2 dimensions of shape (batch_sizenum_points, knum)"
     assert faces.ndim == 2, "faces must have 2 dimensions of shape (num_faces, num_vertices)"
-    input = vertices_features.unsqueeze(2).expand(-1, -1, faces.shape[-1], -1)
-    indices = faces[None, ..., None].expand(vertices_features.shape[0], -1, -1, vertices_features.shape[-1])
-    return torch.gather(input=input, index=indices, dim=1)
+    # input = vertices_features.unsqueeze(2).expand(-1, -1, faces.shape[-1], -1)
+    # indices = faces[None, ..., None].expand(
+    #     vertices_features.shape[0], -1, -1, vertices_features.shape[-1])
+    # return torch.gather(input=input, index=indices, dim=1)
+    input = vertices_features.reshape(-1, 1, 3).expand(-1, faces.shape[-1], -1)
+    indices = faces[..., None].expand(
+        -1, -1, vertices_features.shape[-1])
+    return torch.gather(input=input, index=indices, dim=0)
+
+
+def compute_sdf(pointclouds, face_vertices):
+    return _UnbatchedTriangleDistanceCuda.apply(pointclouds, face_vertices)
 
 
 class _UnbatchedTriangleDistanceCuda(torch.autograd.Function):
@@ -30,10 +40,13 @@ class _UnbatchedTriangleDistanceCuda(torch.autograd.Function):
     def forward(ctx, points, face_vertices):
         num_points = points.shape[0]
         num_faces = face_vertices.shape[0]
-        min_dist = torch.zeros((num_points), device=points.device, dtype=points.dtype)
-        min_dist_idx = torch.zeros((num_points), device=points.device, dtype=torch.long)
-        dist_type = torch.zeros((num_points), device=points.device, dtype=torch.int32)
-        _C.metrics.unbatched_triangle_distance_forward_cuda(
+        min_dist = torch.zeros(
+            (num_points), device=points.device, dtype=points.dtype)
+        min_dist_idx = torch.zeros(
+            (num_points), device=points.device, dtype=torch.long)
+        dist_type = torch.zeros(
+            (num_points), device=points.device, dtype=torch.int32)
+        _C.unbatched_triangle_distance_forward_cuda(
             points, face_vertices, min_dist, min_dist_idx, dist_type)
         ctx.save_for_backward(points.contiguous(), face_vertices.contiguous(),
                               min_dist_idx, dist_type)
@@ -46,7 +59,7 @@ class _UnbatchedTriangleDistanceCuda(torch.autograd.Function):
         grad_dist = grad_dist.contiguous()
         grad_points = torch.zeros_like(points)
         grad_face_vertices = torch.zeros_like(face_vertices)
-        _C.metrics.unbatched_triangle_distance_backward_cuda(
+        _C.unbatched_triangle_distance_backward_cuda(
             grad_dist, points, face_vertices, face_idx, dist_type,
             grad_points, grad_face_vertices)
         return grad_points, grad_face_vertices
