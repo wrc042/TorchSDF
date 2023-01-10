@@ -3,11 +3,13 @@ import kaolin
 from torchsdf import index_vertices_by_faces, compute_sdf
 import os
 import torch
+from time import time
 
 os.environ["CUDA_VISIBLE_DIVICES"] = "1"
 device = "cuda"
 # Ns
 num_sample = 1000000
+samples = torch.rand((num_sample, 3)).to(device).detach()
 
 all_pass = True
 
@@ -16,7 +18,6 @@ for model in os.listdir("tests/models"):
     print("Test:", model[:-4], end=" ")
     model_path = os.path.join("tests/models", model)
     mesh = trimesh.load(model_path, force="mesh", process=False)
-    samples = torch.rand((num_sample, 3)).to(device)
     # (Ns, 3)
     x = samples.clone().requires_grad_()
     # (Nv, 3)
@@ -31,16 +32,24 @@ for model in os.listdir("tests/models"):
 
     # Kaolin
     # (1, Ns)
+    torch.cuda.synchronize()
+    tmp = time()
     distances, face_indexes, types = kaolin.metrics.trianglemesh.point_to_mesh_distance(
         x.unsqueeze(0), face_verts)
     gradient = torch.autograd.grad([distances.sum()], [x], create_graph=True,
                                    retain_graph=True)[0]
+    torch.cuda.synchronize()
+    time_kaolin = time() - tmp
 
     # TorchSDF
     # (Ns)
-    distances_ts, face_indexes_ts, types_ts = compute_sdf(x, face_verts_ts)
+    torch.cuda.synchronize()
+    tmp = time()
+    distances_ts, normal_ts, face_indexes_ts, types_ts = compute_sdf(x, face_verts_ts)
     gradient_ts = torch.autograd.grad([distances_ts.sum()], [x], create_graph=True,
                                       retain_graph=True)[0]
+    torch.cuda.synchronize()
+    time_ts = time() - tmp
     dis_fit = torch.allclose(distances, distances_ts)
     grad_fit = torch.allclose(gradient, gradient_ts, atol=5e-7)
     if (dis_fit and grad_fit):
@@ -51,6 +60,7 @@ for model in os.listdir("tests/models"):
             print("\x1B[31mDistance wrong!\x1B[0m")
         if (not grad_fit):
             print("\x1B[31mGradient wrong!\x1B[0m")
+    print("TorchSDF/Kaolin time:", time_ts/time_kaolin)
 
 if (all_pass):
     print("====\x1B[32mAll pass\x1B[0m====")

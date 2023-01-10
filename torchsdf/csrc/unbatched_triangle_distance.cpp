@@ -25,6 +25,7 @@ void unbatched_triangle_distance_forward_cuda_impl(
     at::Tensor points,
     at::Tensor face_vertices,
     at::Tensor dist,
+    at::Tensor normal,
     at::Tensor face_idx,
     at::Tensor dist_type);
 
@@ -43,6 +44,7 @@ void unbatched_triangle_distance_forward_cuda(
     at::Tensor points,
     at::Tensor face_vertices,
     at::Tensor dist,
+    at::Tensor normal,
     at::Tensor face_idx,
     at::Tensor dist_type) {
   CHECK_CUDA(points);
@@ -64,7 +66,7 @@ void unbatched_triangle_distance_forward_cuda(
   CHECK_SIZES(dist_type, num_points);
 #if WITH_CUDA
   unbatched_triangle_distance_forward_cuda_impl(
-      points, face_vertices, dist, face_idx, dist_type);
+      points, face_vertices, dist, normal, face_idx, dist_type);
 #else
   AT_ERROR("unbatched_triangle_distance not built with CUDA");
 #endif
