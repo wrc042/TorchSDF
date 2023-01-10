@@ -1,4 +1,5 @@
 import trimesh
+import kaolin
 from torchsdf import index_vertices_by_faces, compute_sdf
 import os
 import torch
@@ -13,7 +14,7 @@ samples = samples * 2 - 1
 
 all_pass = True
 
-print("====Normal test====")
+print("====Sign test====")
 for model in os.listdir("tests/models"):
     print("Test:", model[:-4], end=" ")
     model_path = os.path.join("tests/models", model)
@@ -24,25 +25,32 @@ for model in os.listdir("tests/models"):
     verts = torch.Tensor(mesh.vertices.copy()).to(device)
     # (Nf, 3)
     faces = torch.Tensor(mesh.faces.copy()).long().to(device)
+    # (1, Nf, 3, 3)
+    face_verts = kaolin.ops.mesh.index_vertices_by_faces(
+        verts.unsqueeze(0), faces)
     # (Nf, 3, 3)
-    face_verts = index_vertices_by_faces(verts, faces)
+    face_verts_ts = index_vertices_by_faces(verts, faces)
+
+    # Kaolin
+    # (1, Ns)
+    signs = kaolin.ops.mesh.check_sign(
+        verts.unsqueeze(0), faces, x.unsqueeze(0))
+    signs = torch.where(signs, -1*torch.ones_like(signs, dtype=torch.int32),
+                        torch.ones_like(signs, dtype=torch.int32))
 
     # TorchSDF
     # (Ns)
-    distances, dist_sign, normals, clst_points = compute_sdf(x, face_verts)
-    gradient = torch.autograd.grad([distances.sum()], [x], create_graph=True,
-                                   retain_graph=True)[0]
-
-    normal_direct = normals * 2 * distances.unsqueeze(1).sqrt()
-    normal_from_grad = torch.autograd.grad([distances.sum()], [x], create_graph=True,
-                                           retain_graph=True)[0]
-    normal_fit = torch.allclose(normal_direct, normal_from_grad, atol=5e-7)
-    if normal_fit:
+    distances_ts, signs_ts, normals_ts, clst_points_ts = compute_sdf(
+        x, face_verts_ts)
+    equal_num = (signs_ts == signs).sum().item()
+    equal_ratio = equal_num/num_sample
+    sign_fit = (equal_ratio > 0.98)
+    if (sign_fit):
         print("\x1B[32mPass\x1B[0m")
     else:
         all_pass = False
-        print("\x1B[31mNormal wrong!\x1B[0m")
-    print("Max abs:", (normal_direct - normal_from_grad).abs().max().item())
+        print("\x1B[31mSign wrong!\x1B[0m")
+    print(f"Ratio: {equal_ratio:.3f} ({equal_num:d}/{num_sample:d})")
 
 if (all_pass):
     print("====\x1B[32mAll pass\x1B[0m====")

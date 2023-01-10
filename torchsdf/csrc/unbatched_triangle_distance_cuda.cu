@@ -180,6 +180,7 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
     int num_points,
     int num_faces,
     scalar_t* out_dist,
+    int* out_dist_sign,
     vector_t* out_normals,
     vector_t* clst_points) {
   __shared__ vector_t shm[BLOCK_SIZE * 3];
@@ -194,6 +195,7 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
          point_idx += blockDim.x * gridDim.x) {
       vector_t p = points[point_idx];
       scalar_t best_dist = INFINITY;
+      int best_dist_sign = 0;
       vector_t best_normal;
       vector_t best_clst_point;
       for (int sub_face_idx = 0; sub_face_idx < num_faces_iter; sub_face_idx++) {
@@ -231,15 +233,18 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
         }
         vector_t dist_vec = p - closest_point;
         vector_t grad_normal = dist_vec * rsqrt(dot(dist_vec, dist_vec));
+        int dist_sign = (dot(dist_vec, normal)>=0)? 1 : -1;
         float dist = dot(dist_vec, dist_vec);
         if (sub_face_idx == 0 || best_dist > dist) {
           best_dist = dist;
+          best_dist_sign = dist_sign;
           best_normal = grad_normal;
           best_clst_point = closest_point;
         }
       }
       if (start_face_idx == 0 || out_dist[point_idx] > best_dist) {
         out_dist[point_idx] = best_dist;
+        out_dist_sign[point_idx] = best_dist_sign;
         out_normals[point_idx] = best_normal;
         clst_points[point_idx] = best_clst_point;
       }
@@ -268,6 +273,7 @@ void unbatched_triangle_distance_forward_cuda_impl(
     at::Tensor points,
     at::Tensor face_vertices,
     at::Tensor dist,
+    at::Tensor dist_sign,
     at::Tensor normals,
     at::Tensor clst_points) {
   const int num_threads = 512;
@@ -285,6 +291,7 @@ void unbatched_triangle_distance_forward_cuda_impl(
         points.size(0),
         face_vertices.size(0),
         dist.data_ptr<scalar_t>(),
+        dist_sign.data_ptr<int32_t>(),
         reinterpret_cast<vector_t*>(normals.data_ptr<scalar_t>()),
         reinterpret_cast<vector_t*>(clst_points.data_ptr<scalar_t>()));
     CUDA_CHECK(cudaGetLastError());

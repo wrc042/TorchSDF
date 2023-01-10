@@ -24,6 +24,7 @@ void unbatched_triangle_distance_forward_cuda(
     at::Tensor points,
     at::Tensor face_vertices,
     at::Tensor dist,
+    at::Tensor dist_sign,
     at::Tensor normals,
     at::Tensor clst_points);
 

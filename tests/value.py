@@ -46,7 +46,8 @@ for model in os.listdir("tests/models"):
     # (Ns)
     torch.cuda.synchronize()
     tmp = time()
-    distances_ts, normals_ts, clst_points_ts = compute_sdf(x, face_verts_ts)
+    distances_ts, dist_sign_ts, normals_ts, clst_points_ts = compute_sdf(
+        x, face_verts_ts)
     gradient_ts = torch.autograd.grad([distances_ts.sum()], [x], create_graph=True,
                                       retain_graph=True)[0]
     torch.cuda.synchronize()
@@ -61,6 +62,7 @@ for model in os.listdir("tests/models"):
             print("\x1B[31mDistance wrong!\x1B[0m")
         if (not grad_fit):
             print("\x1B[31mGradient wrong!\x1B[0m")
+    print("Max abs:", (gradient - gradient_ts).abs().max().item())
     print("TorchSDF/Kaolin time:", time_ts/time_kaolin)
 
 if (all_pass):

@@ -41,18 +41,20 @@ class _UnbatchedTriangleDistanceCuda(torch.autograd.Function):
         num_points = points.shape[0]
         min_dist = torch.zeros(
             (num_points), device=points.device, dtype=points.dtype)
+        dist_sign = torch.zeros(
+            (num_points), device=points.device, dtype=torch.int32)
         normals = torch.zeros(
             (num_points, 3), device=points.device, dtype=points.dtype)
         clst_points = torch.zeros(
             (num_points, 3), device=points.device, dtype=points.dtype)
         _C.unbatched_triangle_distance_forward_cuda(
-            points, face_vertices, min_dist, normals, clst_points)
+            points, face_vertices, min_dist, dist_sign, normals, clst_points)
         ctx.save_for_backward(points.contiguous(), clst_points)
-        ctx.mark_non_differentiable(normals, clst_points)
-        return min_dist, normals, clst_points
+        ctx.mark_non_differentiable(dist_sign, normals, clst_points)
+        return min_dist, dist_sign, normals, clst_points
 
     @staticmethod
-    def backward(ctx, grad_dist, grad_normals, grad_clst_points):
+    def backward(ctx, grad_dist, grad_dist_sign, grad_normals, grad_clst_points):
         points, clst_points = ctx.saved_tensors
         grad_dist = grad_dist.contiguous()
         grad_points = torch.zeros_like(points)
