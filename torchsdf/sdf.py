@@ -39,7 +39,6 @@ class _UnbatchedTriangleDistanceCuda(torch.autograd.Function):
     @staticmethod
     def forward(ctx, points, face_vertices):
         num_points = points.shape[0]
-        num_faces = face_vertices.shape[0]
         min_dist = torch.zeros(
             (num_points), device=points.device, dtype=points.dtype)
         min_dist_idx = torch.zeros(

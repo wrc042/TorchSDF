@@ -184,37 +184,11 @@ __device__ __forceinline__ void compute_edge_backward(
   scalar_t m = dot(vab, vab);// variable used in forward pass
   scalar_t k = l / m;
   scalar_t j = clamp<scalar_t>(k, 0.0, 1.0);
-  vector_t i = (vab * j) - pb;
+  vector_t i = pb - (vab * j);
   scalar_t h = dot(i, i);
 
-  vector_t i_bar = i * grad;  // horizontal vector
-
-  scalar_t j_bar = dot(i_bar, vab);
-
-  scalar_t dj_dk = (k > 0 && k < 1) ? 1:0;
-
-  scalar_t k_bar = j_bar * dj_dk;
-
-  scalar_t m_bar = k_bar * (- l / (m * m));
-
-  scalar_t l_bar = k_bar * (1 / m);
-
-  // derivative of pb
-  vector_t dl_dpb = vab; //vertical vector
-  vector_t di_dpb = make_vector(-i_bar.x, -i_bar.y, -i_bar.z);
-
-  vector_t pb_bar = dl_dpb * l_bar + di_dpb; // vertical vector
-
-  vector_t p_bar = pb_bar;
-
-  vector_t dm_dvab = vab * static_cast<scalar_t>(2.);  // horizontal vector
-  vector_t dl_dvab = pb;  // horizontal vector
-  vector_t di_dvab = i_bar * j; // horizontal vector
-
-  vector_t vab_bar = ((dm_dvab * m_bar) + (dl_dvab * l_bar)) + di_dvab;  // horizontal vector
-
-  vector_t va_bar = vab_bar;
-  vector_t vb_bar = make_vector(-vab_bar.x - pb_bar.x, -vab_bar.y - pb_bar.y, -vab_bar.z - pb_bar.z);
+  vector_t i_bar = i * grad;
+  vector_t p_bar = i_bar;
 
   grad_input_p[index * 3] = p_bar.x;
   grad_input_p[index * 3 + 1] = p_bar.y;

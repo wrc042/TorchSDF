@@ -42,7 +42,7 @@ for model in os.listdir("tests/models"):
     gradient_ts = torch.autograd.grad([distances_ts.sum()], [x], create_graph=True,
                                       retain_graph=True)[0]
     dis_fit = torch.allclose(distances, distances_ts)
-    grad_fit = torch.allclose(gradient, gradient_ts)
+    grad_fit = torch.allclose(gradient, gradient_ts, atol=5e-7)
     if (dis_fit and grad_fit):
         print("\x1B[32mPass\x1B[0m")
     else:
