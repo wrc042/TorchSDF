@@ -58,8 +58,8 @@ class _UnbatchedTriangleDistanceCuda(torch.autograd.Function):
         points, face_vertices, face_idx, dist_type = ctx.saved_tensors
         grad_dist = grad_dist.contiguous()
         grad_points = torch.zeros_like(points)
-        grad_face_vertices = torch.zeros_like(face_vertices)
+        grad_face_vertices = None
         _C.unbatched_triangle_distance_backward_cuda(
             grad_dist, points, face_vertices, face_idx, dist_type,
-            grad_points, grad_face_vertices)
+            grad_points)
         return grad_points, grad_face_vertices

@@ -7,7 +7,7 @@ import torch
 os.environ["CUDA_VISIBLE_DIVICES"] = "1"
 device = "cuda"
 # Ns
-num_sample = 10000
+num_sample = 1000000
 
 all_pass = True
 

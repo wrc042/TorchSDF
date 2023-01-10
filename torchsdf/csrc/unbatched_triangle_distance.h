@@ -33,8 +33,7 @@ void unbatched_triangle_distance_backward_cuda(
     at::Tensor face_vertices,
     at::Tensor face_idx,
     at::Tensor dist_type,
-    at::Tensor grad_points,
-    at::Tensor grad_face_vertices);
+    at::Tensor grad_points);
 
 }  // namespace kaolin
 
