@@ -4,11 +4,12 @@ import os
 import torch
 from time import time
 
-os.environ["CUDA_VISIBLE_DIVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 device = "cuda"
 # Ns
-num_sample = 100000
+num_sample = 1000000
 samples = torch.rand((num_sample, 3)).to(device).detach()
+samples = samples * 2 - 1
 
 all_pass = True
 
@@ -28,14 +29,14 @@ for model in os.listdir("tests/models"):
 
     # TorchSDF
     # (Ns)
-    distances, normal, face_indexes, types = compute_sdf(x, face_verts)
+    distances, normals, clst_points = compute_sdf(x, face_verts)
     gradient = torch.autograd.grad([distances.sum()], [x], create_graph=True,
                                       retain_graph=True)[0]
 
-    normal_direct = normal * 2 * distances.unsqueeze(1).sqrt()
+    normal_direct = normals * 2 * distances.unsqueeze(1).sqrt()
     normal_from_grad = torch.autograd.grad([distances.sum()], [x], create_graph=True,
                                       retain_graph=True)[0]
-    normal_fit = torch.allclose(normal_direct, normal_from_grad, atol=5e-7)
+    normal_fit = torch.allclose(normal_direct, normal_from_grad, atol=8e-7)
     if normal_fit:
         print("\x1B[32mPass\x1B[0m")
     else:

@@ -172,30 +172,6 @@ __device__ __forceinline__ vector_t point_at(vector_t vertex, vector_t edge, flo
   return vertex + (edge * t);
 }
 
-template<typename scalar_t, typename vector_t>
-__device__ __forceinline__ void compute_edge_backward(
-    vector_t vab,
-    vector_t pb,
-    scalar_t* grad_input_p,
-    int64_t index,
-    scalar_t grad) {
-  // variable used in forward pass
-  scalar_t l = dot(vab, pb);
-  scalar_t m = dot(vab, vab);// variable used in forward pass
-  scalar_t k = l / m;
-  scalar_t j = clamp<scalar_t>(k, 0.0, 1.0);
-  vector_t i = pb - (vab * j);
-  scalar_t h = dot(i, i);
-
-  vector_t i_bar = i * grad;
-  vector_t p_bar = i_bar;
-
-  grad_input_p[index * 3] = p_bar.x;
-  grad_input_p[index * 3 + 1] = p_bar.y;
-  grad_input_p[index * 3 + 2] = p_bar.z;
-}
-
-
 
 template<typename scalar_t, typename vector_t, int BLOCK_SIZE>
 __global__ void unbatched_triangle_distance_forward_cuda_kernel(
@@ -204,9 +180,8 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
     int num_points,
     int num_faces,
     scalar_t* out_dist,
-    vector_t* out_normal,
-    int64_t* out_closest_face_idx,
-    int* out_dist_type) {
+    vector_t* out_normals,
+    vector_t* clst_points) {
   __shared__ vector_t shm[BLOCK_SIZE * 3];
 
   for (int start_face_idx = 0; start_face_idx < num_faces; start_face_idx += BLOCK_SIZE) {
@@ -218,13 +193,11 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
     for (int point_idx = threadIdx.x + blockDim.x * blockIdx.x; point_idx < num_points;
          point_idx += blockDim.x * gridDim.x) {
       vector_t p = points[point_idx];
-      int best_face_idx = 0;
-      int best_dist_type = 0;
-      vector_t best_normal;
       scalar_t best_dist = INFINITY;
+      vector_t best_normal;
+      vector_t best_clst_point;
       for (int sub_face_idx = 0; sub_face_idx < num_faces_iter; sub_face_idx++) {
         vector_t closest_point;
-        int dist_type = 0;
 
         vector_t v1 = shm[sub_face_idx * 3];
         vector_t v2 = shm[sub_face_idx * 3 + 1];
@@ -238,28 +211,21 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
         scalar_t uca = project_edge(v3, e31, p);
         if (uca > 1 && uab < 0) {
           closest_point = v1;
-          dist_type = 1;
         } else {
           scalar_t ubc = project_edge(v2, e23, p);
           if (uab > 1 && ubc < 0) {
             closest_point = v2;
-            dist_type = 2;
           } else if (ubc > 1 && uca < 0) {
             closest_point = v3;
-            dist_type = 3;
           } else {
             if (in_range(uab) && (is_not_above(v1, e12, normal, p))) {
               closest_point = point_at(v1, e12, uab);
-              dist_type = 4;
             } else if (in_range(ubc) && (is_not_above(v2, e23, normal, p))) {
               closest_point = point_at(v2, e23, ubc);
-              dist_type = 5;
             } else if (in_range(uca) && (is_not_above(v3, e31, normal, p))) {
               closest_point = point_at(v3, e31, uca);
-              dist_type = 6;
             } else {
               closest_point = project_plane(v1, normal, p);
-              dist_type = 0;
             }
           }
         }
@@ -269,15 +235,13 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
         if (sub_face_idx == 0 || best_dist > dist) {
           best_dist = dist;
           best_normal = grad_normal;
-          best_dist_type = dist_type;
-          best_face_idx = start_face_idx + sub_face_idx;
+          best_clst_point = closest_point;
         }
       }
       if (start_face_idx == 0 || out_dist[point_idx] > best_dist) {
         out_dist[point_idx] = best_dist;
-        out_normal[point_idx] = best_normal;
-        out_closest_face_idx[point_idx] = best_face_idx;
-        out_dist_type[point_idx] = best_dist_type;
+        out_normals[point_idx] = best_normal;
+        clst_points[point_idx] = best_clst_point;
       }
     }
     __syncthreads();
@@ -288,83 +252,24 @@ template<typename scalar_t, typename vector_t>
 __global__ void unbatched_triangle_distance_backward_cuda_kernel(
     const scalar_t* grad_dist,
     const vector_t* points,
-    const vector_t* vertices,
-    int64_t* closest_face_idx,
-    int* dist_type,
+    const vector_t* clst_points,
     int num_points,
-    int num_faces,
-    scalar_t* grad_points) {
+    vector_t* grad_points) {
   for (int point_id = threadIdx.x + blockIdx.x * blockDim.x; point_id < num_points;
        point_id += blockDim.x * gridDim.x) {
-    int type = dist_type[point_id];
-    int64_t face_id = closest_face_idx[point_id];
-    vector_t p = points[point_id];
-    vector_t v1 = vertices[face_id * 3];
-    vector_t v2 = vertices[face_id * 3 + 1];
-    vector_t v3 = vertices[face_id * 3 + 2];
-    vector_t e12 = v2 - v1;
-    vector_t e23 = v3 - v2;
-    vector_t e31 = v1 - v3;
     scalar_t grad_out = 2. * grad_dist[point_id];
-    if (type == 0) {  // plane distance
-      vector_t point_vec = p - v1;
-      vector_t e21 = v1 - v2;
-      vector_t normal = cross(e21, e31);
-      scalar_t len = sqrt(dot(normal, normal));
-      vector_t unit_normal = normal / len;
-      scalar_t dist = dot(point_vec, unit_normal);
-
-      vector_t grad_dist_vec = unit_normal * (dist * grad_out);
-      scalar_t grad_dist = dot(unit_normal, grad_dist_vec);
-      vector_t grad_point_vec = unit_normal * grad_dist;
-      vector_t grad_unit_normal = grad_dist_vec * dist + point_vec * grad_dist;
-      scalar_t grad_len = - dot(normal, grad_unit_normal) / (len * len);
-      scalar_t grad_dot2_normal = grad_len / (2 * sqrt(dot(normal, normal)));
-      vector_t grad_normal = (grad_unit_normal / len) + \
-                             normal * (grad_dot2_normal * static_cast<scalar_t>(2.));
-      vector_t grad_e31 = cross(grad_normal, e21);
-      vector_t grad_e21 = cross(e31, grad_normal);
-
-      grad_points[point_id * 3] = grad_point_vec.x;
-      grad_points[point_id * 3 + 1] = grad_point_vec.y;
-      grad_points[point_id * 3 + 2] = grad_point_vec.z;
-      vector_t tmp = grad_e31 + grad_e21 - grad_point_vec;
-    } else if (type == 1) {  // distance to v1
-      vector_t grad_dist_vec = (p - v1) * grad_out;
-      grad_points[point_id * 3] = grad_dist_vec.x;
-      grad_points[point_id * 3 + 1] = grad_dist_vec.y;
-      grad_points[point_id * 3 + 2] = grad_dist_vec.z;
-    } else if (type == 2) {  // distance to v2
-      vector_t grad_dist_vec = (p - v2) * grad_out;
-      grad_points[point_id * 3] = grad_dist_vec.x;
-      grad_points[point_id * 3 + 1] = grad_dist_vec.y;
-      grad_points[point_id * 3 + 2] = grad_dist_vec.z;
-    } else if (type == 3) {  // distance to v3
-      vector_t grad_dist_vec = (p - v3) * grad_out;
-      grad_points[point_id * 3] = grad_dist_vec.x;
-      grad_points[point_id * 3 + 1] = grad_dist_vec.y;
-      grad_points[point_id * 3 + 2] = grad_dist_vec.z;
-    } else if (type == 4) {  // distance to e12
-      compute_edge_backward(e12, p - v1,
-                            grad_points, point_id, grad_out);
-    } else if (type == 5) {  // distance to e23
-      compute_edge_backward(e23, p - v2,
-                            grad_points, point_id, grad_out);
-    } else {  // distance to e31
-      compute_edge_backward(e31, p - v3,
-                            grad_points, point_id, grad_out);
-    }
+    vector_t dist_vec = points[point_id] - clst_points[point_id];
+    dist_vec = dist_vec * grad_out;
+    grad_points[point_id] = dist_vec;
   }
-
 }
 
 void unbatched_triangle_distance_forward_cuda_impl(
     at::Tensor points,
     at::Tensor face_vertices,
     at::Tensor dist,
-    at::Tensor normal,
-    at::Tensor face_idx,
-    at::Tensor dist_type) {
+    at::Tensor normals,
+    at::Tensor clst_points) {
   const int num_threads = 512;
   const int num_points = points.size(0);
   const int num_blocks = (num_points + num_threads - 1) / num_threads;
@@ -380,9 +285,8 @@ void unbatched_triangle_distance_forward_cuda_impl(
         points.size(0),
         face_vertices.size(0),
         dist.data_ptr<scalar_t>(),
-        reinterpret_cast<vector_t*>(normal.data_ptr<scalar_t>()),
-        face_idx.data_ptr<int64_t>(),
-        dist_type.data_ptr<int32_t>());
+        reinterpret_cast<vector_t*>(normals.data_ptr<scalar_t>()),
+        reinterpret_cast<vector_t*>(clst_points.data_ptr<scalar_t>()));
     CUDA_CHECK(cudaGetLastError());
   });
 }
@@ -390,9 +294,7 @@ void unbatched_triangle_distance_forward_cuda_impl(
 void unbatched_triangle_distance_backward_cuda_impl(
     at::Tensor grad_dist,
     at::Tensor points,
-    at::Tensor face_vertices,
-    at::Tensor face_idx,
-    at::Tensor dist_type,
+    at::Tensor clst_points,
     at::Tensor grad_points) {
 
   DISPATCH_INPUT_TYPES(points.scalar_type(), scalar_t,
@@ -406,12 +308,9 @@ void unbatched_triangle_distance_backward_cuda_impl(
       num_blocks, num_threads, 0, stream>>>(
         grad_dist.data_ptr<scalar_t>(),
         reinterpret_cast<vector_t*>(points.data_ptr<scalar_t>()),
-        reinterpret_cast<vector_t*>(face_vertices.data_ptr<scalar_t>()),
-        face_idx.data_ptr<int64_t>(),
-        dist_type.data_ptr<int32_t>(),
+        reinterpret_cast<vector_t*>(clst_points.data_ptr<scalar_t>()),
         points.size(0),
-        face_vertices.size(0),
-        grad_points.data_ptr<scalar_t>());
+        reinterpret_cast<vector_t*>(grad_points.data_ptr<scalar_t>()));
     CUDA_CHECK(cudaGetLastError());
   });
 }

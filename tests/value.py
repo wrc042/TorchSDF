@@ -5,11 +5,12 @@ import os
 import torch
 from time import time
 
-os.environ["CUDA_VISIBLE_DIVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 device = "cuda"
 # Ns
-num_sample = 1000000
+num_sample = 10000000
 samples = torch.rand((num_sample, 3)).to(device).detach()
+samples = samples * 2 - 1
 
 all_pass = True
 
@@ -45,7 +46,7 @@ for model in os.listdir("tests/models"):
     # (Ns)
     torch.cuda.synchronize()
     tmp = time()
-    distances_ts, normal_ts, face_indexes_ts, types_ts = compute_sdf(x, face_verts_ts)
+    distances_ts, normals_ts, clst_points_ts = compute_sdf(x, face_verts_ts)
     gradient_ts = torch.autograd.grad([distances_ts.sum()], [x], create_graph=True,
                                       retain_graph=True)[0]
     torch.cuda.synchronize()

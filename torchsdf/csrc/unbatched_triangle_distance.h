@@ -24,16 +24,13 @@ void unbatched_triangle_distance_forward_cuda(
     at::Tensor points,
     at::Tensor face_vertices,
     at::Tensor dist,
-    at::Tensor normal,
-    at::Tensor face_idx,
-    at::Tensor dist_type);
+    at::Tensor normals,
+    at::Tensor clst_points);
 
 void unbatched_triangle_distance_backward_cuda(
     at::Tensor grad_dist,
     at::Tensor points,
-    at::Tensor face_vertices,
-    at::Tensor face_idx,
-    at::Tensor dist_type,
+    at::Tensor clst_points,
     at::Tensor grad_points);
 
 }  // namespace kaolin
