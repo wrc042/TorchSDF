@@ -232,7 +232,7 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
           }
         }
         vector_t dist_vec = p - closest_point;
-        vector_t grad_normal = dist_vec * rsqrt(dot(dist_vec, dist_vec));
+        vector_t grad_normal = dist_vec * rsqrt(1e-16f + dot(dist_vec, dist_vec));
         int dist_sign = (dot(dist_vec, normal)>=0)? 1 : -1;
         float dist = dot(dist_vec, dist_vec);
         if (sub_face_idx == 0 || best_dist > dist) {

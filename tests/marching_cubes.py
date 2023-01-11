@@ -57,7 +57,7 @@ for model in os.listdir("tests/models"):
     signs = torch.where(signs_, -torch.ones_like(
         signs_).int(), torch.ones_like(signs_).int())
     # (1, Ns)
-    values = distances * signs
+    values = distances.sqrt() * signs
     values = values.detach().cpu().numpy().reshape(N, N, N)
     verts, faces, _, _ = skimage.measure.marching_cubes(
         values, level=0.0, spacing=[voxel_size] * 3)
