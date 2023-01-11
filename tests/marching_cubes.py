@@ -6,7 +6,7 @@ import torch
 import numpy as np
 import skimage
 
-os.environ["CUDA_VISIBLE_DIVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 device = "cuda"
 
 os.makedirs("tests/outputs", exist_ok=True)
