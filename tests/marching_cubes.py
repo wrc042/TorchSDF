@@ -30,6 +30,8 @@ samples[:, 2] = (samples[:, 2] * voxel_size) + voxel_origin[2]
 # (Ns, 3)
 samples = samples.to(device)
 values = None
+# api = "Kaolin"
+api = "TorchSDF"
 
 print("====Marching cube test====")
 for model in os.listdir("tests/models"):
@@ -45,18 +47,25 @@ for model in os.listdir("tests/models"):
     # (1, Nf, 3, 3)
     face_verts = kaolin.ops.mesh.index_vertices_by_faces(
         verts.unsqueeze(0), faces)
+    face_verts_ts = index_vertices_by_faces(verts, faces)
 
+    distances, signs = None, None
     # Kaolin
-    # (1, Ns)
-    distances, face_indexes, types = kaolin.metrics.trianglemesh.point_to_mesh_distance(
-        x.unsqueeze(0), face_verts)
-    # (1, Ns)
-    signs_ = kaolin.ops.mesh.check_sign(
-        verts.unsqueeze(0), faces, x.unsqueeze(0))
-    # (1, Ns)
-    signs = torch.where(signs_, -torch.ones_like(
-        signs_).int(), torch.ones_like(signs_).int())
-    # (1, Ns)
+    if api == "Kaolin":
+        # (1, Ns)
+        distances, face_indexes, types = kaolin.metrics.trianglemesh.point_to_mesh_distance(
+            x.unsqueeze(0), face_verts)
+        # (1, Ns)
+        signs_ = kaolin.ops.mesh.check_sign(
+            verts.unsqueeze(0), faces, x.unsqueeze(0))
+        # (1, Ns)
+        signs = torch.where(signs_, -torch.ones_like(
+            signs_).int(), torch.ones_like(signs_).int())
+    # TorchSDF
+    elif api == "TorchSDF":
+        distances, signs, normals_ts, clst_points_ts = compute_sdf(
+            x, face_verts_ts)
+
     values = distances.sqrt() * signs
     values = values.detach().cpu().numpy().reshape(N, N, N)
     verts, faces, _, _ = skimage.measure.marching_cubes(
