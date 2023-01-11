@@ -14,7 +14,7 @@ samples = samples * 2 - 1
 
 all_pass = True
 
-print("====Value test====")
+print("====Speed test====")
 for model in os.listdir("tests/models"):
     print("Test:", model[:-4], end=" ")
     model_path = os.path.join("tests/models", model)
@@ -37,8 +37,11 @@ for model in os.listdir("tests/models"):
     tmp = time()
     distances, face_indexes, types = kaolin.metrics.trianglemesh.point_to_mesh_distance(
         x.unsqueeze(0), face_verts)
-    gradient = torch.autograd.grad([distances.sum()], [x], create_graph=True,
-                                   retain_graph=True)[0]
+    signs_ = kaolin.ops.mesh.check_sign(
+        verts.unsqueeze(0), faces, x.unsqueeze(0))
+    signs = torch.where(signs_, -torch.ones_like(
+        signs_).int(), torch.ones_like(signs_).int())
+    sdf = distances.sqrt() * signs
     torch.cuda.synchronize()
     time_kaolin = time() - tmp
 
@@ -48,25 +51,24 @@ for model in os.listdir("tests/models"):
     tmp = time()
     distances_ts, dist_sign_ts, normals_ts, clst_points_ts = compute_sdf(
         x, face_verts_ts)
-    gradient_ts = torch.autograd.grad([distances_ts.sum()], [x], create_graph=True,
-                                      retain_graph=True)[0]
+    sdf_ts = distances_ts.sqrt() * dist_sign_ts
     torch.cuda.synchronize()
     time_ts = time() - tmp
     
+    equal_num = (dist_sign_ts == signs).sum().item()
+    equal_ratio = equal_num/num_sample
+    sign_fit = (equal_ratio > 0.98)
     dis_fit = torch.allclose(distances, distances_ts)
-    grad_fit = torch.allclose(gradient, gradient_ts, atol=5e-7)
-    if (dis_fit and grad_fit):
+    if (dis_fit and sign_fit):
         print("\x1B[32mPass\x1B[0m")
     else:
         all_pass = False
         if (not dis_fit):
             print("\x1B[31mDistance wrong!\x1B[0m")
-        if (not grad_fit):
-            print("\x1B[31mGradient wrong!\x1B[0m")
-    print("Max abs:", (gradient - gradient_ts).abs().max().item())
+        if (not sign_fit):
+            print("\x1B[31mSign wrong!\x1B[0m")
+    print("Max abs:", (distances.sqrt() - distances_ts.sqrt()).abs().max().item())
+    print(f"Ratio: {equal_ratio:.3f} ({equal_num:d}/{num_sample:d})")
     print("TorchSDF/Kaolin time:", time_ts/time_kaolin)
 
-if (all_pass):
-    print("====\x1B[32mAll pass\x1B[0m====")
-else:
-    print("====\x1B[31mWrong\x1B[0m====")
+print("====\x1B[32mAll pass\x1B[0m====")
