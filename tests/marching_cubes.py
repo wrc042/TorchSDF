@@ -44,10 +44,14 @@ for model in os.listdir("tests/models"):
     verts = torch.Tensor(mesh.vertices.copy()).to(device)
     # (Nf, 3)
     faces = torch.Tensor(mesh.faces.copy()).long().to(device)
+    # (Nv, 3)
+    vert_normals = torch.Tensor(mesh.vertex_normals.copy()).to(device)
     # (1, Nf, 3, 3)
     face_verts = kaolin.ops.mesh.index_vertices_by_faces(
         verts.unsqueeze(0), faces)
     face_verts_ts = index_vertices_by_faces(verts, faces)
+    # (Nf, 3, 3)
+    face_vert_normals = index_vertices_by_faces(vert_normals, faces)
 
     distances, signs = None, None
     # Kaolin
@@ -64,7 +68,7 @@ for model in os.listdir("tests/models"):
     # TorchSDF
     elif api == "TorchSDF":
         distances, signs, normals_ts, clst_points_ts = compute_sdf(
-            x, face_verts_ts)
+            x, face_verts_ts, face_vert_normals)
 
     values = distances.sqrt() * signs
     values = values.detach().cpu().numpy().reshape(N, N, N)

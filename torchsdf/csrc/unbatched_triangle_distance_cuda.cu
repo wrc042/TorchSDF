@@ -177,6 +177,7 @@ template<typename scalar_t, typename vector_t, int BLOCK_SIZE>
 __global__ void unbatched_triangle_distance_forward_cuda_kernel(
     const vector_t* points,
     const vector_t* vertices,
+    const vector_t* vert_normals,
     int num_points,
     int num_faces,
     scalar_t* out_dist,
@@ -184,11 +185,13 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
     vector_t* out_normals,
     vector_t* clst_points) {
   __shared__ vector_t shm[BLOCK_SIZE * 3];
+  __shared__ vector_t shmn[BLOCK_SIZE * 3];
 
   for (int start_face_idx = 0; start_face_idx < num_faces; start_face_idx += BLOCK_SIZE) {
     int num_faces_iter = min(num_faces - start_face_idx, BLOCK_SIZE);
     for (int j = threadIdx.x; j < num_faces_iter * 3; j += blockDim.x) {
       shm[j] = vertices[start_face_idx * 3 + j];
+      shmn[j] = vert_normals[start_face_idx * 3 + j];
     }
     __syncthreads();
     for (int point_idx = threadIdx.x + blockDim.x * blockIdx.x; point_idx < num_points;
@@ -200,6 +203,7 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
       vector_t best_clst_point;
       for (int sub_face_idx = 0; sub_face_idx < num_faces_iter; sub_face_idx++) {
         vector_t closest_point;
+        vector_t weighted_normal;
 
         vector_t v1 = shm[sub_face_idx * 3];
         vector_t v2 = shm[sub_face_idx * 3 + 1];
@@ -213,27 +217,34 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
         scalar_t uca = project_edge(v3, e31, p);
         if (uca > 1 && uab < 0) {
           closest_point = v1;
+          weighted_normal = shmn[sub_face_idx * 3];
         } else {
           scalar_t ubc = project_edge(v2, e23, p);
           if (uab > 1 && ubc < 0) {
             closest_point = v2;
+            weighted_normal = shmn[sub_face_idx * 3 + 1];
           } else if (ubc > 1 && uca < 0) {
             closest_point = v3;
+            weighted_normal = shmn[sub_face_idx * 3 + 2];
           } else {
             if (in_range(uab) && (is_not_above(v1, e12, normal, p))) {
               closest_point = point_at(v1, e12, uab);
+              weighted_normal = shmn[sub_face_idx * 3] * (1 - uab) + shmn[sub_face_idx * 3 + 1] * uab;
             } else if (in_range(ubc) && (is_not_above(v2, e23, normal, p))) {
               closest_point = point_at(v2, e23, ubc);
+              weighted_normal = shmn[sub_face_idx * 3 + 1] * (1 - ubc) + shmn[sub_face_idx * 3 + 2] * ubc;
             } else if (in_range(uca) && (is_not_above(v3, e31, normal, p))) {
               closest_point = point_at(v3, e31, uca);
+              weighted_normal = shmn[sub_face_idx * 3 + 2] * (1 - uca) + shmn[sub_face_idx * 3] * uca;
             } else {
               closest_point = project_plane(v1, normal, p);
+              weighted_normal = normal;
             }
           }
         }
         vector_t dist_vec = p - closest_point;
         vector_t grad_normal = dist_vec * rsqrt(1e-16f + dot(dist_vec, dist_vec));
-        int dist_sign = (dot(dist_vec, normal)>=0)? 1 : -1;
+        int dist_sign = (dot(dist_vec, weighted_normal)>=0)? 1 : -1;
         float dist = dot(dist_vec, dist_vec);
         if (sub_face_idx == 0 || best_dist > dist) {
           best_dist = dist;
@@ -272,6 +283,7 @@ __global__ void unbatched_triangle_distance_backward_cuda_kernel(
 void unbatched_triangle_distance_forward_cuda_impl(
     at::Tensor points,
     at::Tensor face_vertices,
+    at::Tensor face_vert_normals,
     at::Tensor dist,
     at::Tensor dist_sign,
     at::Tensor normals,
@@ -284,10 +296,11 @@ void unbatched_triangle_distance_forward_cuda_impl(
     using vector_t = ScalarTypeToVec3<scalar_t>::type;
     const at::cuda::OptionalCUDAGuard device_guard(at::device_of(points));
     auto stream = at::cuda::getCurrentCUDAStream();
-    unbatched_triangle_distance_forward_cuda_kernel<scalar_t, vector_t, 512><<<
+    unbatched_triangle_distance_forward_cuda_kernel<scalar_t, vector_t, 256><<<
       num_blocks, num_threads, 0, stream>>>(
         reinterpret_cast<vector_t*>(points.data_ptr<scalar_t>()),
         reinterpret_cast<vector_t*>(face_vertices.data_ptr<scalar_t>()),
+        reinterpret_cast<vector_t*>(face_vert_normals.data_ptr<scalar_t>()),
         points.size(0),
         face_vertices.size(0),
         dist.data_ptr<scalar_t>(),

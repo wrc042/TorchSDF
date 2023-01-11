@@ -25,11 +25,15 @@ for model in os.listdir("tests/models"):
     verts = torch.Tensor(mesh.vertices.copy()).to(device)
     # (Nf, 3)
     faces = torch.Tensor(mesh.faces.copy()).long().to(device)
+    # (Nv, 3)
+    vert_normals = torch.Tensor(mesh.vertex_normals.copy()).to(device)
     # (1, Nf, 3, 3)
     face_verts = kaolin.ops.mesh.index_vertices_by_faces(
         verts.unsqueeze(0), faces)
     # (Nf, 3, 3)
     face_verts_ts = index_vertices_by_faces(verts, faces)
+    # (Nf, 3, 3)
+    face_vert_normals = index_vertices_by_faces(vert_normals, faces)
 
     # Kaolin
     # (1, Ns)
@@ -50,14 +54,14 @@ for model in os.listdir("tests/models"):
     torch.cuda.synchronize()
     tmp = time()
     distances_ts, dist_sign_ts, normals_ts, clst_points_ts = compute_sdf(
-        x, face_verts_ts)
+        x, face_verts_ts, face_vert_normals)
     sdf_ts = distances_ts.sqrt() * dist_sign_ts
     torch.cuda.synchronize()
     time_ts = time() - tmp
-    
+
     equal_num = (dist_sign_ts == signs).sum().item()
     equal_ratio = equal_num/num_sample
-    sign_fit = (equal_ratio > 0.98)
+    sign_fit = (equal_ratio > 0.99)
     dis_fit = torch.allclose(distances, distances_ts)
     if (dis_fit and sign_fit):
         print("\x1B[32mPass\x1B[0m")

@@ -24,6 +24,7 @@ namespace kaolin {
 void unbatched_triangle_distance_forward_cuda_impl(
     at::Tensor points,
     at::Tensor face_vertices,
+    at::Tensor face_vert_normals,
     at::Tensor dist,
     at::Tensor dist_sign,
     at::Tensor normals,
@@ -41,18 +42,21 @@ void unbatched_triangle_distance_backward_cuda_impl(
 void unbatched_triangle_distance_forward_cuda(
     at::Tensor points,
     at::Tensor face_vertices,
+    at::Tensor face_vert_normals,
     at::Tensor dist,
     at::Tensor dist_sign,
     at::Tensor normals,
     at::Tensor clst_points) {
   CHECK_CUDA(points);
   CHECK_CUDA(face_vertices);
+  CHECK_CUDA(face_vert_normals);
   CHECK_CUDA(dist);
   CHECK_CUDA(dist_sign);
   CHECK_CUDA(normals);
   CHECK_CUDA(clst_points);
   CHECK_CONTIGUOUS(points);
   CHECK_CONTIGUOUS(face_vertices);
+  CHECK_CONTIGUOUS(face_vert_normals);
   CHECK_CONTIGUOUS(dist);
   CHECK_CONTIGUOUS(dist_sign);
   CHECK_CONTIGUOUS(normals);
@@ -61,13 +65,14 @@ void unbatched_triangle_distance_forward_cuda(
   const int num_faces = face_vertices.size(0);
   CHECK_SIZES(points, num_points, 3);
   CHECK_SIZES(face_vertices, num_faces, 3, 3);
+  CHECK_SIZES(face_vert_normals, num_faces, 3, 3);
   CHECK_SIZES(dist, num_points);
   CHECK_SIZES(dist_sign, num_points);
   CHECK_SIZES(normals, num_points, 3);
   CHECK_SIZES(clst_points, num_points, 3);
 #if WITH_CUDA
   unbatched_triangle_distance_forward_cuda_impl(
-      points, face_vertices, dist, dist_sign, normals, clst_points);
+      points, face_vertices, face_vert_normals, dist, dist_sign, normals, clst_points);
 #else
   AT_ERROR("unbatched_triangle_distance not built with CUDA");
 #endif

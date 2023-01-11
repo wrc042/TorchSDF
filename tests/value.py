@@ -25,16 +25,20 @@ for model in os.listdir("tests/models"):
     verts = torch.Tensor(mesh.vertices.copy()).to(device)
     # (Nf, 3)
     faces = torch.Tensor(mesh.faces.copy()).long().to(device)
+    # (Nv, 3)
+    vert_normals = torch.Tensor(mesh.vertex_normals.copy()).to(device)
     # (1, Nf, 3, 3)
     face_verts = kaolin.ops.mesh.index_vertices_by_faces(
         verts.unsqueeze(0), faces)
     # (Nf, 3, 3)
     face_verts_ts = index_vertices_by_faces(verts, faces)
+    # (Nf, 3, 3)
+    face_vert_normals = index_vertices_by_faces(vert_normals, faces)
 
     # Kaolin
-    # (1, Ns)
     torch.cuda.synchronize()
     tmp = time()
+    # (1, Ns)
     distances, face_indexes, types = kaolin.metrics.trianglemesh.point_to_mesh_distance(
         x.unsqueeze(0), face_verts)
     gradient = torch.autograd.grad([distances.sum()], [x], create_graph=True,
@@ -43,11 +47,11 @@ for model in os.listdir("tests/models"):
     time_kaolin = time() - tmp
 
     # TorchSDF
-    # (Ns)
     torch.cuda.synchronize()
     tmp = time()
+    # (Ns)
     distances_ts, dist_sign_ts, normals_ts, clst_points_ts = compute_sdf(
-        x, face_verts_ts)
+        x, face_verts_ts, face_vert_normals)
     gradient_ts = torch.autograd.grad([distances_ts.sum()], [x], create_graph=True,
                                       retain_graph=True)[0]
     torch.cuda.synchronize()

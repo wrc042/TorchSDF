@@ -24,12 +24,16 @@ for model in os.listdir("tests/models"):
     verts = torch.Tensor(mesh.vertices.copy()).to(device)
     # (Nf, 3)
     faces = torch.Tensor(mesh.faces.copy()).long().to(device)
+    # (Nv, 3)
+    vert_normals = torch.Tensor(mesh.vertex_normals.copy()).to(device)
     # (Nf, 3, 3)
     face_verts = index_vertices_by_faces(verts, faces)
+    # (Nf, 3, 3)
+    face_vert_normals = index_vertices_by_faces(vert_normals, faces)
 
     # TorchSDF
     # (Ns)
-    distances, dist_sign, normals, clst_points = compute_sdf(x, face_verts)
+    distances, dist_sign, normals, clst_points = compute_sdf(x, face_verts, face_vert_normals)
     gradient = torch.autograd.grad([distances.sum()], [x], create_graph=True,
                                    retain_graph=True)[0]
 
