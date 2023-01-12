@@ -238,7 +238,13 @@ __global__ void unbatched_triangle_distance_forward_cuda_kernel(
               weighted_normal = shmn[sub_face_idx * 3 + 2] * (1 - uca) + shmn[sub_face_idx * 3] * uca;
             } else {
               closest_point = project_plane(v1, normal, p);
-              weighted_normal = normal;
+              scalar_t area = rsqrt(dot(normal, normal));
+              vector_t pv1 = cross(e12, closest_point - v1);
+              scalar_t a1 = sqrt(dot(pv1, pv1)) * area;
+              vector_t pv2 = cross(e23, closest_point - v2);
+              scalar_t a2 = sqrt(dot(pv2, pv2)) * area;
+              weighted_normal = shmn[sub_face_idx * 3] * a1+ shmn[sub_face_idx * 3 + 1] * a2
+                + shmn[sub_face_idx * 3 + 2] * (1 - a1 - a2);
             }
           }
         }
