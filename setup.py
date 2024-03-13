@@ -15,6 +15,7 @@ import warnings
 
 TORCH_MIN_VER = '1.5.0'
 TORCH_MAX_VER = '1.12.1'
+IGNORE_TORCH_VER = True
 
 # Module required before installation
 # trying to install it ahead turned out to be too unstable.
